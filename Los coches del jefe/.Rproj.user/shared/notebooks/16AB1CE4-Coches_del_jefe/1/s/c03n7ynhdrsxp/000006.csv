@@ -1,0 +1,4 @@
+"0","ggplot(data, aes(x = velocida, y = acelerac, color = marca)) +"
+"0","  geom_point() +"
+"0","  xlab('velocidad') +"
+"0","  ylab('aceleración')"

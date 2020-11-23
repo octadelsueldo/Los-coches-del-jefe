@@ -1,0 +1,1 @@
+"0","summarise_all(data, funs(sum(is.na(.)))) #cuentame los valores nulos en el dataset"

@@ -1,0 +1,285 @@
+---
+title: "Los coches del jefe"
+author: "Hugo César Octavio del Sueldo"
+date: "11/21/2020"
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.align = 'center')
+```
+
+## Introduccion
+
+Se parte de una base de datos compuesta por 125 vehículos de los que se explican quince variables (marca, modelo, precio, número de cilindros, cilindrada, potencia, revoluciones por minuto, peso, número de plazas, consumo a 90 km/h, a 120 km/h, urbano y la aceleración de 0 a 100 así como el tiempo de aceleración). En este informe se recogen los resultados del análisis exploratorio de datos y se presentan las variables que se consideran decisivas a la hora de separar en grupos los vehículos de manera consistente.
+
+A la hora de realizar la división de los vehículos, voy a prestarle atencion a las características técnicas de los mismos. Características relacionadas con los atributos del motor (cilindrada, revoluciones por minuto, potencia y numero de cilindros), especificaciones generales y capacidad (velocidad máxima, aceleración y número de plazas) y eficiencia (consumos).
+
+El objetivo final será llevar a cabo un análisis clúster de los vehículos, dividiéndolos así en grupos homogéneos internamente y heterogéneos entre sí. Dichos vehículos serán guardados en 10 lugares agrupándolos en virtud de las características que considere oportunas.
+
+
+## Desarrollo 
+
+Tomando como referencia los objetivos de la practica planteada, algunos atributos como el precio en pesetas, la marca y el modelo, no resultan útiles de cara a realizar la división y, por ello, no serán tenidos en cuenta. Si bien podrían ser tenidas en cuenta de cara a la clasificación de los vehículos para su venta, no es nuestro principal objetivo en este momento.
+
+A la hora de realizar una clasificación para su posterior reparto se descartan algunas variables por considerarse incompletas (aceleración de 0 a 100).
+
+Las variables asociadas al consumo (consumo a 90 km/h, a 120 km/h y urbano), seran desechadas ya que utilizaremos el consumo urbano que no tiene fuerte correlacion con ninguna de las otras variables, por lo tanto, a la hora de un analisis cluster creo que seria interesante mantenerla y no a consumo a 90 y 120 km/hr. 
+
+
+```{r, include=FALSE}
+library(foreign) #Mediante foreign se dispone del método read.spss para la carga de archivos en R.
+library(janitor) # Limpieza de nombres
+library(skimr) # Summary lindo
+library(magrittr) #  %<>%
+library(corrplot) # Grafico de correlaciones
+library(ggcorrplot)  # Correlaciones con ggplot
+library(PerformanceAnalytics) # Otra correlación
+library(imputeTS) # na_mean() reemplaza nulos por la media
+library(ggplot2)
+library(dplyr)
+library(Rtsne)
+library(haven)
+library(foreign)
+library(factoextra)
+library(cluster)
+library(FactoMineR)
+library(imputeTS)
+```
+
+
+```{r carga_de_datos, include=FALSE}
+data <- read.spss("tterreno.sav", to.data.frame = TRUE)
+head(data)
+tail(data)
+
+#Observamos los objetos dentro del dataset
+str(data)
+skim(data)
+
+### Diccionario de variables
+
+#* `Marca :` Marca del Vehículo.
+
+#* `Modelo :` Modelo del Vehículo.
+
+#* `PVP :` El precio de Venta del Vehículo (en pesetas).
+
+#* `Cilindro :` Número de cilindros.
+
+#* `CC :` Cilindrada del Vehículo (en cm. cúbicos).
+
+#* `Potencia :` Potencia (CV).
+
+#* `RPM :` Revoluciones por minuto.
+
+#* `Peso :` Peso del vehículo.
+
+#* `Plazas :` Número de asientos que tiene el vehículo.
+
+#* `Cons90 :` Consumo de combustible cuando tiene velocidad de 90 Km/h.
+
+#* `Cons120 :` Consumo de combustible cuando tiene velocidad de 120 Km/h.
+
+#* `ConsUrb :` Consumo de combustible cuando transita en zona urbana.
+
+#* `Velocida :` Velocidad máxima.
+
+#* `Acelerac :` Aceleración de 0 a 100.
+
+#* `Acel2 :` Tiempo de aceleración.
+```
+
+```{r, include=FALSE}
+summarise_all(data, funs(sum(is.na(.)))) #cuentame los valores nulos en el dataset
+```
+### Tratamiento de los datos
+
+El dataset se compone de tres tipos de variables, numéricas continuas (precio en pesetas, cc, potencia, revoluciones por minuto, peso en kilogramos, consumo en carretera a 90 y 120 km/h, consumo urbano y aceleración de 0 a 100 km/h), numéricas discretas (número de cilindros y número de plazas) y categóricas (marca, modelo y tiempo de aceleración). El dataframe tiene muchos nulos para sus dimensiones por lo que deberemos trabajar estos Na.
+
+El criterio que voy a utilizar sera completar los datos faltantes de cada una de las variables con el promedio de aquellos vehiculos de la misma marca o modelo. Asi voy a ir revisando el fichero fila a fila observando a que dato corresponde el Na faltante asignandole un valor en base a esta regla de decision. He tomado esta decision ya que si descartaria los valores Na directamente estaria perdiendo muchisima informacion. Por otro lado, aquellos variables que no tengan valores de referencia de otros vehiculos para usarlos en las imputaciones faltantes, lo que se hizo fue reemplazarlos por la media global de las observaciones.
+
+```{r, include=FALSE}
+#Reemplazamos los valores NA de las observaciones faltantes por la media de su marca para no perder informacion
+data[116, 11] <- mean(data[c(119, 120, 118, 121, 117), 11])
+
+data[c(75:79), 11] <- mean(data[c(63:74), 11])
+
+data[19, 11] <- mean(data[c(13:18, 20:22), 11])
+data[19, 12] <- mean(data[c(13:18, 20:22), 12])
+
+data[c(105, 106), 12] <- 144
+data[114, 12] <- 135
+
+data[7:8,8] <- mean(data[c(9:12),8])
+
+data[26, 11] <- 12
+data[26, 14] <- 19
+
+data[61:62, 14] <- mean(data[c(48:60),14])
+
+data[75:79, 10] <- mean(data[c(63:74, 80:81), 10])
+data[75:79, 12] <- mean(data[c(63:74, 80:81), 12])
+data[75:81, 14] <- mean(data[c(63:74), 14])
+
+data[91, 10] <- mean(data[c(92:94), 10])
+data[91, 11] <- mean(data[c(92:94), 11])
+data[91:92, 14] <- 22
+
+data[105:106, 13] <- mean(data[c(95:104, 107:113), 13])
+
+data[114, 13] <- 135
+data[116, 12] <- mean(data[c(117:121), 12])
+
+#al resto de valores nulos le aplicaremos la media global ya que no se cuenta con informacion sobre ellos
+
+data <- na_mean(data)
+
+
+summarise_all(data, funs(sum(is.na(.)))) #chequeamos los resultados
+```
+Ya completados los datos del dataframe, procedemos a analizar en detalle cada una de las variables con el fin de filtrar aquellas variables que consideramos relevantes para el analisis dejando afuera algunas que no consideramos oportundas.
+
+Procederemos primero a escalar las variables numericas para poder compararlas. A traves de la funcion scale, escalamos los valores numericos para que esten en la misma escala metrica para que podamos realizar el analisis
+
+Una vez hecho esto, procederemos a graficar las variables que caracterizan a los vehiculos para poder conocer mejor los coches del jefe.
+```{r, include=FALSE}
+
+perfomScaling <-  T
+if(perfomScaling){
+  for(i in names(data)){
+    if(class(data[,i ]) == 'integer' | class(data[,i ]) == 'numeric'){
+      data[,i ] = scale(data[,i ])
+    }
+  }
+}
+
+```
+
+# Graficos de las variables de los vehiculos
+
+```{r cilindros, echo=F, out.height='50%', out.width='50%'}
+ggplot(data) +
+  geom_bar(aes(x = cilindro)) +
+  xlab('Nº de cilindros') +
+  ylab('Nº de vehículos')
+```
+
+```{r plazas, echo=F, out.height='50%', out.width='50%'}
+ggplot(data) +
+  geom_bar(aes(x = plazas)) +
+  xlab('Nº de plazas') +
+  ylab('Nº de vehículos')
+```
+
+Aqui podemos observar que los coches del jefe son coches grandes ya que la mayoria son vehiculos entre 4 y 7 plazas. 
+
+```{r velocidad/aceleracion, echo=F, out.height='50%', out.width='50%'}
+ggplot(data, aes(x = velocida, y = acelerac, color = marca)) +
+  geom_point() +
+  xlab('velocidad') +
+  ylab('aceleración')
+```
+
+Aqui podemos apreciar como a mayor velocidad, menor es la aceleracion que se genera por lo vehiculos.
+
+### Veamos ahora la relacion existente entre peso, consumo y plazas de los vehiculos
+
+En una aproximación naive, se podría suponer que los consumos han de estar relacionados con el peso y, este a su vez con el número de plazas del vehículo; lo cual podría conducir a prescindir del peso o del número de plazas. A continuación, se exponen en los siguientes gráficos, la relación entre las tres variables mencionadas.
+
+
+```{r peso/consumo90, echo=FALSE, out.height='50%', out.width='50%'}
+ggplot(data, aes(x = peso, y = cons90, color = plazas)) +
+  geom_point() +
+  xlab('Peso (Kg)') +
+  ylab('Consumo a 90 Km/h')
+```
+
+```{r peso/consumo120, echo=FALSE, out.height='50%', out.width='50%'}
+ggplot(data, aes(x = peso, y = cons120, color = plazas)) +
+  geom_point() +
+  xlab('Peso (Kg)') +
+  ylab('Consumo a 120 Km/h')
+```
+
+```{r peso/consumo_urbano, echo=FALSE, out.height='50%', out.width='50%'}
+ggplot(data, aes(x = peso, y = consurb, color = plazas)) +
+  geom_point() +
+  xlab('Peso (Kg)') +
+  ylab('Consumo urbano')
+```
+
+
+En los diagramas de dispersión se aprecia la relación existente entre las variables, por norma general, a mayor peso, mayor consumo. Sin embargo, la relación existente entre el peso y el número de plazas no queda del todo bien definida. En la siguiente ilustración se observa mejor.
+
+
+
+```{r plazas/peso, echo=FALSE, warning=FALSE, out.height='50%', out.width='50%'}
+ggplot(data, aes(x = plazas, y = peso)) +
+  geom_boxplot(color = 'blue',
+               fill = 'blue',
+               alpha = 0.2,
+               notch = F,
+               notchwidth = 2,
+               outlier.colour = 'purple',
+               outlier.size = 2) +
+  stat_summary(fun.y = mean,
+               geom = "point",
+               shape = 20,
+               size = 3,
+               color = "yellow",
+               fill = "yellow") +
+  xlab('Nº de plazas') +
+  ylab('Peso (Kg)') 
+```
+
+En el diagrama de cajas se observa que aquellos vehículos de 2 plazas, pese a que el sentido común nos haga pensar que tienen que pesar menos que aquellos con un mayor número de plazas, pesan más en muchas ocasiones que el resto de los vehículos. Por tanto, se conservan ambas variables en esta primera etapa.
+
+
+# Respecto a las variables numéricas de motor se calcula la matriz de correlaciones:
+
+
+```{r, echo=FALSE, message=FALSE, out.height='50%', out.width='50%'}
+motor_numeric <- data[, c(5,  6, 7, 10:14)]
+corr_motor <- cor(motor_numeric, use = "complete.obs")
+corrplot(corr_motor)
+```
+
+De acuerdo a la matriz de correlaciones obtenida, se visualiza que la potencia se encuentra muy asociada a los cilindrada del vehiculo, los consumos a 90 y 120 km/hr y la velocidad máxima. Esto es un indicador de que puede ser una variable a tener en cuenta de cara a la realización de un análisis clúster. 
+
+La aceleración resulta ser una de las variables más incorreladas de todas las relacionadas con el motor, esto indica que podria llegar a ser un atributo diferenciador a la hora de realizar grupos en el análisis clúster. Lo mismo para velocidad y rpm ya que no estan muy correlacionadas a ninguna de las otras variables.
+
+Los consumos a 90 y 120 km/hr presentan correlaciones altas entre sí. El consumo urbano es el que menores correlaciones presenta con el resto de las variables, lo cual puede indicar que posee una mayor capacidad discriminante que el consumo a 90 km/h y el consumo a 120 km/hr; se podría prescindir de estos dos últimos.
+
+Una vez llevado a cabo todo el análisis exploratorio, la marca y el modelo de los vehículos presentan poca importancia a la hora clasificar estos, al igual que el precio en pesetas. Si bien estas variables podrían ser tenidas en cuenta a la hora de realizar grupos de cara a proceder a la venta de los vehículos, no es nuestro objetivo en este momento
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
