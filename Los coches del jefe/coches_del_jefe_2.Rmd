@@ -198,7 +198,7 @@ fviz_silhouette(coches.eclust.pam)
 Pruebas que permiten establecer el número adecuado de grupos antes de proceder a la segmentación, que establecerá las observaciones en grupos de acuerdo con la minimización del indicador establecido.
 
 
-```{r nbclust, message=FALSE, echo=FALSE, warning=FALSE, fig.keep='last', fig.showtext=TRUE}
+```{r nbclust, message=FALSE, echo=FALSE, warning=FALSE, fig.keep='last', results='hide'}
 library("NbClust")
 set.seed(01122020)
 clus.nb =NbClust(data_num,
