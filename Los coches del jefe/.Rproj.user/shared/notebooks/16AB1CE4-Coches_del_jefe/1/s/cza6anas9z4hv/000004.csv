@@ -1,1 +1,0 @@
-"0","ggplot(data) + geom_bar(aes(x = plazas)) + xlab('Nº de plazas') + ylab('Nº de vehículos')"

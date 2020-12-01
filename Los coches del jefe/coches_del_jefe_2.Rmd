@@ -1,0 +1,239 @@
+---
+title: "Coches del Jefe - Parte 2"
+author: "Hugo César Octavio del Sueldo"
+date: "11/29/2020"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F, warning=F, fig.align = "center", out.width='50%', out.height='50%')
+```
+
+## Problema a solucionar
+
+Su jefe tiene una semana complicada y le ha pedido que le haga una propuesta de cómo repartir la colección en las distintas residencias. Como ud. bien sabe, podría repartirlos como máximo en las diez que posee en la actualidad (precisamente está, durante esta semana, cerrando la venta de alguna de ellas, que quizá sustituya por alguna otra), pero, siendo una opción conservadora, quizá no sea la más adecuada, atendiendo a las caracerísticas que ud. ya conoce de los vehículos.
+
+## Introduccion
+
+Esta es la segunda parte de la practica relacionada a los coches del jefe. En la primera parte de esta serie de entregas realizamos un analisis explotario de los datos con los que contabamos, analizando aquellas variables que nos resultaban interesantes para la agrupacion y posterior reparto de los coches del jefe en las localidades o residencias con las que el contaba. En esta segunda parte, como habran visto arriba, deberemos hacerle una propuesta de reparto de la coleccion de autos al jefe. Para esto, estudiaremos el numero adecuado de grupos en los que dividir la coleccion. Teniendo en cuenta de que el maximo numero de coches por residencia es de 15 y sabiendo de que en el caso de que propongamos grupos con mas coches, tendremos que escoger las residencias en las que guardarlos, atendiendo al criterio de distancia. En el siguiente [enlace](https://www.google.com/maps/d/viewer?mid=16dTDuU6f4K3HI3C7vQtxBUPB_xcGkrhW&ll=45.84097027564829%2C3.994010199999991&z=6) tiene un mapa de las residencias actuales. El criterio de reparto debe ser consistente, y debe justificar su decisión en un máximo de 4 páginas.
+
+```{r librerias, include=FALSE}
+library(foreign) #Mediante foreign se dispone del método read.spss para la carga de archivos en R.
+library(janitor) # Limpieza de nombres
+library(skimr) # Summary lindo
+library(magrittr) #  %<>%
+library(corrplot) # Grafico de correlaciones
+library(ggcorrplot)  # Correlaciones con ggplot
+library(PerformanceAnalytics) # Otra correlación
+library(imputeTS) # na_mean() reemplaza nulos por la media
+library(ggplot2)
+library(dplyr)
+library(Rtsne)
+library(haven)
+library(foreign)
+library(factoextra)
+library(cluster)
+library(FactoMineR)
+library(imputeTS)
+```
+
+```{r carga_de_datos, include=FALSE}
+data <- read.spss("tterreno.sav", to.data.frame = TRUE)
+head(data)
+tail(data)
+
+#Observamos los objetos dentro del dataset
+str(data)
+skim(data)
+```
+
+```{r, include=FALSE}
+summarise_all(data, funs(sum(is.na(.)))) #cuentame los valores nulos en el dataset
+```
+
+
+```{r, include=FALSE}
+
+
+#Tratamiento de los datos
+
+#El dataset se compone de tres tipos de variables, numéricas continuas (precio en pesetas, cc, potencia, revoluciones por minuto, peso en kilogramos, consumo en carretera a 90 y 120 km/h, consumo urbano y aceleración de 0 a 100 km/h), numéricas discretas (número de cilindros y número de plazas) y categóricas (marca, modelo y tiempo de aceleración). El dataframe tiene muchos nulos para sus dimensiones por lo que deberemos trabajar estos Na.
+
+#El criterio que voy a utilizar sera completar los datos faltantes de cada una de las variables con el promedio de aquellos vehiculos de la misma marca o modelo. Asi voy a ir revisando el fichero fila a fila observando a que dato corresponde el Na faltante asignandole un valor en base a esta regla de decision. He tomado esta decision ya que si descartaria los valores Na directamente estaria perdiendo muchisima informacion. Por otro lado, aquellos variables que no tengan valores de referencia de otros vehiculos para usarlos en las imputaciones faltantes, lo que se hizo fue reemplazarlos por la media global de las observaciones.
+
+
+#Reemplazamos los valores NA de las observaciones faltantes por la media de su marca para no perder informacion
+data[116, 11] <- mean(data[c(119, 120, 118, 121, 117), 11])
+
+data[c(75:79), 11] <- mean(data[c(63:74), 11])
+
+data[19, 11] <- mean(data[c(13:18, 20:22), 11])
+data[19, 12] <- mean(data[c(13:18, 20:22), 12])
+
+data[c(105, 106), 12] <- 144
+data[114, 12] <- 135
+
+data[7:8,8] <- mean(data[c(9:12),8])
+
+data[26, 11] <- 12
+data[26, 14] <- 19
+
+data[61:62, 14] <- mean(data[c(48:60),14])
+
+data[75:79, 10] <- mean(data[c(63:74, 80:81), 10])
+data[75:79, 12] <- mean(data[c(63:74, 80:81), 12])
+data[75:81, 14] <- mean(data[c(63:74), 14])
+
+data[91, 10] <- mean(data[c(92:94), 10])
+data[91, 11] <- mean(data[c(92:94), 11])
+data[91:92, 14] <- 22
+
+data[105:106, 13] <- mean(data[c(95:104, 107:113), 13])
+
+data[114, 13] <- 135
+data[116, 12] <- mean(data[c(117:121), 12])
+
+#al resto de valores nulos le aplicaremos la media global ya que no se cuenta con informacion sobre ellos
+
+data <- na_mean(data)
+
+
+summarise_all(data, funs(sum(is.na(.)))) #chequeamos los resultados
+```
+
+## Análisis Cluster
+
+Creamos un nuevo dataframe, con las columnas numericas que son necesarias en cualquier análisis cluster ya que los mismos no admiten otro tipo de variables. Con estas columnas vamos a realizar un análisis cluster para distribuir los grupos de coches en las diferentes localidades. En esta oportunidad utilizare todas las variables numericas ya que teniendo en cuenta las dimensiones del fichero considero que todas las columnas o variables puede aportarme informacion valiosa de cara al armado de grupos para su distribucion.
+
+```{r, include=FALSE}
+data$cilindro <- as.numeric(data$cilindro) # pasamos a numerica cilindro
+data$plazas <- as.numeric(data$plazas) # pasamos a numerica a plazas
+str(data) # chequeamos los resultados
+
+# Le colocamos de indice el nombre de los modelos
+rownames(data) = make.names(substring(data$modelo,1,15), unique = TRUE)
+data_num <- data[,-c(1,2,15)] #elegimos las variables numericas
+
+rownames(data_num) <- rownames(data) #a data_num le ponemos los nombres de data
+
+perfomScaling <-  T
+if(perfomScaling){
+  for(i in names(data_num)){
+    if(class(data_num[,i ]) == 'integer' | class(data_num[,i ]) == 'numeric'){
+      data_num[,i ] = scale(data_num[,i ])
+    }
+  }
+}
+
+```
+
+```{r, include=FALSE}
+#Analizamos ahora los principales estadisticos de las variables a analizar
+skim(data_num)
+```
+
+
+```{r, include=FALSE}
+## Obtenemos las distancias del dataframe escalado a través de Pearson
+#observamos las diferentes distancias entras las observaciones. Colocamos stand F (FALSE) porq ya estan los valores estandarizados
+qdist <- get_dist(data_num, stand = F, method = 'pearson') 
+```
+
+#### Realizamos la representación gráfica.
+
+```{r, echo=FALSE}
+fviz_dist(qdist, gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07"), lab_size = 5)
+```
+
+Analizando las variables en base a sus distancias, podemos observar que hay grupos de observaciones bien identificadas en base al tamaño de los cuadrados y de sus colores. Mientras mas azul, podemos observar que los coches son mas homogeneos y los rojos significa que son mas heterogeneos. Aqui para saber lo similares que son los vehiculos, lo analizamos en base a la posicion que tienen los coches en virtud de sus caracteristicas. Este grafico ya nos da la pauta de que seria una muy buena idea separar en diferentes clusters.
+
+```{r, include=FALSE}
+cochescorr <- cor(data_num, method = 'pearson')
+round(cochescorr,3)
+
+#Aca podemos observar como potencia y precio tienen alta correlacion, a su vez consumo urbano y potencia son casi independientes uno del otro. Tambien, revoluciones por minuto y peso tienen correlacion negativa al igual que velocidad y aceleracion, entre otros. Estas caracteristicas entre los coches, nos permitiran separarlos en diferentes cluster que luego nos serviran para distribuirlos entre las distintas localidades del jefe
+
+```
+
+```{r, include= FALSE}
+# Y ahora la convertimos en la matriz de distancias
+dist.cor <- as.dist(1 - cochescorr)  # Las correlaciones negativas tendrán en la nueva matriz de distancias un valor > 1
+round(as.matrix(dist.cor),  2)
+```
+
+## Cluster no jerarquico
+
+Utilizare un metodo de cluster `no jerarquico` como el **kmeans** y el **pam** porque, para la tarea que se nos ha encomendado, no sabemos el numero de grupos en los que debemos agrupar sino que establecemos, de acuerdo a nuestra experiencia, cuál es el número de grupos con el que proceder a la partición de la población; exige un conocimiento inicial de la misma, o una decisión de tipo administrativo (los costes de segmentar la población en muchos grupos pueden ser elevados).
+
+Para el trabajo realizare un cluster de 5 grupos ya que con este tamaño estoy segmentando bastante bien mis coches con algún pequeño solapamiento pero sin que nos dificulte mucho la tarea de la distribucion. El algoritmo de la libreria eclust nos daba como óptimo un número de 10 cluster, pero, para esta cantidad de clusters habia muchos solapamientos entre los vehiculos.
+
+```{r, echo=FALSE, message=FALSE}
+#Necesitan de una semilla
+set.seed(01122020)
+
+#Metodo Kmeans
+coches.eclust.kmeans = eclust(data_num, "kmeans", k = 5, hc_metric = 'euclidean', hc_method = 'ward.D2',nstart=25)
+
+#Silueta con el AGNES
+fviz_silhouette(coches.eclust.kmeans)
+```
+
+
+Con el algoritmo `pam` nos sucede algo similar al kmeans, donde para el numero k optimo que propone el mismo de 9, tenemos muchos solapamientos entre los coches, dificultandonos la tarea que nos han planteado el jefe. Entonces procederemos con el numero de cinco cluster que a nuestro entender nos parece razonable.  
+
+
+```{r kmeans, include=FALSE}
+set.seed(01122020)
+#Metodo Kmeans
+coches.eclust.pam = eclust(data_num, "pam", k = 5, hc_metric = 'euclidean', hc_method = 'ward.D2')
+
+#Silueta con el AGNES
+fviz_silhouette(coches.eclust.pam)
+```
+
+#### Identificación del número de grupos
+
+Pruebas que permiten establecer el número adecuado de grupos antes de proceder a la segmentación, que establecerá las observaciones en grupos de acuerdo con la minimización del indicador establecido.
+
+
+```{r nbclust, message=FALSE, echo=FALSE, warning=FALSE, fig.keep='last', fig.showtext=TRUE}
+library("NbClust")
+set.seed(01122020)
+clus.nb =NbClust(data_num,
+                 distance = "euclidean",
+                 min.nc = 2,
+                 max.nc = 10,
+                 method = "complete",
+                 index ="all")
+
+fviz_nbclust(clus.nb) +
+  theme_minimal() +
+  labs(x="Número k de clusters",
+       y="Frecuencia")
+```
+
+
+Entre los distintos metodos utilizados para conocer el numero optimo de clusters como la regla del perfil y el método del hombre, el paquete NBClust nos dice que son 3 el optimo de clusters que deberiamos generar. No obstante esto, utilizaremos un numero de 5 grupos, como comentamos anteriormente, porque con ese numero de cluster estamos segmentando bastante bien y en calidad de la representacion no perdemos mucho.
+
+# Conclusiones
+La distribución de los coches según el análisis cluster la vamos a realizar del siguiente modo:
+
+* El Método KMeans y PAM permitieron clasificar la muestra en 5 grupos bastante bien diferenciados.
+
+* Si bien el jefe solicitó 10 grupos de coches, desde el punto estadístico hubiera sido correcto elegir 3 clusters, pero finalmente desde el punto de vista del negocio y la distancia es preferible 5 grupos.
+
+* Dado que no se tiene otro criterio que la distancia geográfica, se considera la distancia como unico criterio para distribuir los clusters:
+
++ Casa 3, Casa 5 y Casa 10, se asignan al cluster 5 conseguido con kmeans debido a que es un grupo grande con 56 coches por lo que de estos, 45 iran a esas tres casas y luego, los 11 coches restantes de este cluster seran localizados en la Casa 4 en Corse junto con el cluster 2 que en similitud no son tan distintos.
+        
++ Casa 2, se asigna con los coches del cluster 3 debido a que en distancia estan muy alejados respecto del cluster 5 y el cluster 2.
+        
++ Casa 1, de manera similar asignaremos a los coches del cluster 3 que no tenian espacio en la Casa 2 junto con 8 coches del cluster 1 que en terminos de distancia estan bastante cerca.
+        
++ Casa 7 y Casa 6, se deben colocar los coches del cluster 1 que no tenian espacio en la casa 1 (unos 15 coches para Casa 7 y 2 Coches para Casa 6) y los 13 coches restantes, para completar Casa 6 (13 coches) deben ser del cluster 4.
+        
++ Casa  9, se colocaran los coches del cluster 4 que son los restantes.
+
+

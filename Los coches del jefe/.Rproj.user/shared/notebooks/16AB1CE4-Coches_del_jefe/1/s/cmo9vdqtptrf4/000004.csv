@@ -1,1 +1,0 @@
-"0","ggplot(data, aes(x = peso, y = cons90, color = plazas)) + geom_point() + xlab('Peso (Kg)') + ylab('Consumo a 90 Km/h (Litros)')"

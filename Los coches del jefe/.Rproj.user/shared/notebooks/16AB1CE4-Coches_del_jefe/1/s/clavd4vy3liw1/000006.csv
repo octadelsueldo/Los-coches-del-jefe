@@ -1,4 +1,0 @@
-"0","data <- read.spss(""tterreno.sav"", to.data.frame = TRUE)"
-"2","re-encoding from CP1252
-"
-"0","head(data)"
