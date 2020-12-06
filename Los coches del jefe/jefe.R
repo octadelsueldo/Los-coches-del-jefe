@@ -1,0 +1,288 @@
+### Los coches del jefe ####
+
+# Cargamos los datos con foreign
+library(foreign)
+TTerreno = as.data.frame(read.spss("tterreno.sav"))
+
+## Tratamiento NAs
+
+#Identificación de los NAs por columnas
+apply(TTerreno, 2, function(x) {sum(is.na(x))})
+
+#Vemos cuáles son
+subset(TTerreno, is.na(peso)) 
+
+# De esta forma, podemos decidir cómo sustituir; en este caso, por el peso de los otros dos coches equivalentes.
+library(tidyverse)
+
+TTerreno$peso=replace_na(TTerreno$peso, 1850) 
+
+# con el resto
+subset(TTerreno, is.na(cons90)) 
+
+# En el caso de los Nissan y Ssanyong sustituiremos con los consumos medios de la marca, 
+
+TTerreno %>%
+        group_by(marca) %>%
+        dplyr::summarize(Mean90 = mean(cons90, na.rm=TRUE),
+                         Mean120 = mean(cons120, na.rm=TRUE),
+                         MeanUrb = mean(consurb, na.rm=TRUE)) 
+
+TTerreno$cons90.2 <- ifelse(TTerreno$marca %in% c("NISSAN") & is.na(TTerreno$cons90), 8.4, TTerreno$cons90)
+TTerreno$cons90.3 <- ifelse(TTerreno$marca %in% c("SSANGYONG") & is.na(TTerreno$cons90), 8.17, TTerreno$cons90.2)
+
+# Para los UAZ, por el consumo medio de los TT de 7 plazas
+TTerreno %>%
+        group_by(plazas) %>%
+        dplyr::summarize(Mean90 = mean(cons90, na.rm=TRUE),
+                         Mean120 = mean(cons120, na.rm=TRUE),
+                         MeanUrb = mean(consurb, na.rm=TRUE)) 
+
+TTerreno$cons90.4 <- ifelse(TTerreno$marca %in% c("UAZ") & is.na(TTerreno$cons90), 9.29, TTerreno$cons90.3)
+
+#♥ Finalmente, tenemos cons90.4 con todos los consumos y "pisamos" cons90
+TTerreno$cons90=TTerreno$cons90.4
+
+
+# Procedemos igual con los cons120 y consurb:
+# ASIA: cons120 de los de 4 plazas
+TTerreno$cons120.2 <- ifelse(TTerreno$marca %in% c("ASIA MOTORS") & is.na(TTerreno$cons120), 11, TTerreno$cons120)
+
+# Jeep  Grand Cherokee Jamb por el 2.5TD 3 ptas (justo encima)
+TTerreno$cons120.3 <- ifelse(TTerreno$marca %in% c("JEEP") & is.na(TTerreno$cons120), 10.5, TTerreno$cons120.2)
+
+# LADA  por el de los 5 plazas
+TTerreno$cons120.4 <- ifelse(TTerreno$marca %in% c("LADA") & is.na(TTerreno$cons120), 12.8, TTerreno$cons120.3)
+
+# NISSAN y SSanyong por los consumos medios  de la marca a 120
+
+TTerreno$cons120.5 <- ifelse(TTerreno$marca %in% c("NISSAN") & is.na(TTerreno$cons120), 12.5, TTerreno$cons120.4)
+TTerreno$cons120.6 <- ifelse(TTerreno$marca %in% c("SSANGYONG") & is.na(TTerreno$cons120), 12.6, TTerreno$cons120.5)
+
+#  Por último, los UAZ por el consumo medio de los TT de 7 plazas
+TTerreno$cons120.7 <- ifelse(TTerreno$marca %in% c("UAZ") & is.na(TTerreno$cons120), 13.5, TTerreno$cons120.6)
+
+##♠ Pisamos cons120 con cons120.7
+
+TTerreno$cons120=TTerreno$cons120.7
+
+# Eliminamos las sobrantes
+TTerreno[,c(16:21)]=NULL
+
+# Actuamos del mismo modo para consurb y velocida
+TTerreno$consurb.1 <- ifelse(TTerreno$marca %in% c("JEEP") & is.na(TTerreno$consurb), 9.8, TTerreno$consurb)
+TTerreno$consurb.2 <- ifelse(TTerreno$marca %in% c("NISSAN") & is.na(TTerreno$consurb), 12.2, TTerreno$consurb.1)
+TTerreno$consurb.3 <- ifelse(TTerreno$marca %in% c("TOYOTA") & is.na(TTerreno$consurb), 10.4, TTerreno$consurb.2) # cambiamos por el análogo - justo encima
+
+TTerreno$consurb=TTerreno$consurb.3
+
+# Eliminamos las sobrantes
+TTerreno[,c(16:18)]=NULL
+
+TTerreno$velocida.1 <- ifelse(TTerreno$marca %in% c("SUZUKI") & is.na(TTerreno$velocida), 147, TTerreno$velocida)
+TTerreno$velocida.2 <- ifelse(TTerreno$marca %in% c("TATA") & is.na(TTerreno$velocida), 135, TTerreno$velocida.1)
+
+TTerreno$velocida=TTerreno$velocida.2
+
+## Definimos el DF con las variables que queremos, todas menos rpm, acelerac, acel2
+
+TT=TTerreno[, c(1:13)]
+TT$rpm=NULL
+
+# Comprobamos los NA
+apply(TT, 2, function(x) {sum(is.na(x))})
+
+# Uno las dos 1as columnas, y las elimino
+TT$TT <- paste(TT$marca,"-",TT$modelo)
+TT[,c(1,2)]=NULL
+
+
+# Como hay duplicados (debido a versiones distintas no recogidas en el nombre del modelo), y eso nos impide renombrar las filas, los re-codificamos 
+TT$TT <- with(TT, make.unique(as.character(TT)))
+
+
+# Y pongo por nombre de fila el valor de la columna TT
+
+TT = data.frame(TT[,-11], row.names=TT[,11])
+
+
+### YA TENEMOS NUESTRO DF COMPLETO PARA PODER TRABAJAR
+
+# Redefinimos las variables cilindros y plazas como numéricas con unfactor de varhandle
+library(varhandle)
+
+TT$cilindro=unfactor(TT$cilindro)
+TT$plazas=unfactor(TT$plazas)
+
+## Fase 1. caracterizamos los vehículos
+
+TT_stats = data.frame(
+        Min = apply(TT, 2, min), # mín
+        P25 = apply(TT, 2, quantile, probs=c(0.25), na.rm=TRUE),
+        Med = apply(TT, 2, median), # mediana
+        P75 = apply(TT, 2, quantile, probs=c(0.75), na.rm=TRUE),
+        Max = apply(TT, 2, max), # máx
+        Mean = apply(TT, 2, mean), # media
+        SD = apply(TT, 2, sd) # desv est
+        )
+TT_stats = round(TT_stats, 1)
+TT_stats
+
+## Fase 2. Comprobamos distancias sobre variables tipificadas
+
+# Tipificamos las variables
+TT_tip=scale(TT)
+
+library(factoextra)
+library(cluster)
+
+
+TT.dist = get_dist(TT, stand = TRUE, method = "pearson") 
+
+fviz_dist(TT.dist, gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07"), lab_size = 5)
+
+
+dist.eucl = dist(TT_tip, method = "euclidean", upper=F)
+dist.eucl
+
+### Visualización de las matrices de distancia mediante corrplot() del package corrplot, que cargamos
+
+# Distancia euclídea
+library(corrplot)
+
+corrplot(as.matrix(dist.eucl), is.corr = FALSE, method = "color", type="lower", diag=F, order="hclust", tl.cex=0.5, tl.col="dodgerblue4")
+
+#Podemos emplear el dendrograma para visualizar grupos de observaciones similares
+plot(hclust(dist.eucl, method = "ward.D2"), cex=0.7, main="Dendrograma", ylab="Anchura", 
+     xlab="Análisis cluster aplicando Ward sobre matriz de distancias euclídeas", cex=0.5)
+
+# De esta forma, ya empezamos a observar grupos de vehículos similares basados en la distancia euclídea
+
+## Fase 3. Clusters iniciales. Pruebas.
+
+TT.eclust = eclust(TT, FUNcluster = "kmeans", stand=TRUE, hc_metric="euclidean", nstart=25) # sobre TT, estandarizado con stand=TRUE
+
+# Miramos el número "óptimo" de clusters
+
+TT.eclust$nbclust
+# ...  lo que nos lleva a despreciar esta opción, al no detectarse diferencias entre los vehículos, y pasamos a un jerárquico
+
+## Y pasamos a un jerárquico
+TT.eclust.j = eclust(TT, "hclust", k=4) # forzamos a 4 grupos
+fviz_dend(TT.eclust.j, rect = TRUE, cex=0.6) # dendrograma con 4 grupos
+fviz_silhouette(TT.eclust.j) # silueta
+
+fviz_cluster(TT.eclust.j, pointsize = 2, labelsize = 8, repel=TRUE) # scatter plot
+
+
+## Estas opciones resultan forzadas, tenemos que pasar a otra solución.
+
+# Conjunto de datos aleatorios
+set.seed(123)
+n = nrow(TT)
+random_df <- data.frame(
+        x1 = runif(nrow(TT), min(TT$pvp), max(TT$pvp)),
+        x2 = runif(nrow(TT), min(TT$cilindro), max(TT$cilindro)),
+        x3 = runif(nrow(TT), min(TT$cc), max(TT$cc)),
+        x4 = runif(nrow(TT), min(TT$potencia), max(TT$potencia)),
+        x5 = runif(nrow(TT), min(TT$peso), max(TT$peso)),
+        x6 = runif(nrow(TT), min(TT$plazas), max(TT$plazas)),
+        x7 = runif(nrow(TT), min(TT$cons90), max(TT$cons90)),
+        x8 = runif(nrow(TT), min(TT$cons120), max(TT$cons120)),
+        x9 = runif(nrow(TT), min(TT$consurb), max(TT$consurb)),
+        x10 = runif(nrow(TT), min(TT$velocida), max(TT$velocida)))
+
+
+# Fijamos un par de clusters y los comparamos con la solución aleatoria.
+
+set.seed(123)
+
+prueba1 = kmeans(TT, 2)
+fviz_cluster(list(data = TT, cluster = prueba1$cluster),
+             ellipse.type = "norm", geom = "point", stand = TRUE)
+
+prueba2 = kmeans(random_df, 2)
+fviz_cluster(list(data = random_df, cluster = prueba2$cluster),
+             ellipse.type = "norm", geom = "point", stand = TRUE)
+
+# Fijamos ahora 3 clusters.
+
+set.seed(123)
+
+prueba11 = kmeans(TT, 3)
+fviz_cluster(list(data = TT, cluster = prueba11$cluster),
+             ellipse.type = "convex", geom = "point", stand = TRUE)
+
+prueba22 = kmeans(random_df, 3)
+fviz_cluster(list(data = random_df, cluster = prueba22$cluster),
+             ellipse.type = "convex", geom = "point", stand = TRUE)
+
+# Cluster jerárquico sobre el conjunto de datos aleatorios, con k=4
+fviz_dend(hclust(dist(random_df)), k = 4,  cex = 0.5)
+fviz_dend(hclust(dist(TT)), k = 4,  cex = 0.5)
+
+
+##Evaluamos la bondad del AC con el método de Hopkins: cuanto más cercano a cero, mejor capacidad de segmentación.
+require(clustertend)
+# Aplicamos el estadístico sobre los datos reales
+set.seed(123)
+hopkins(TT_tip, n = nrow(TT)-1)
+
+# y ahora sobre los datos aleatorios
+set.seed(123)
+hopkins(random_df, n = nrow(random_df)-1)
+
+# La diferencia es significativa.
+
+# Bondad, sobre datos tipificados:
+bondad_ac = get_clust_tendency(TT_tip, 100)
+# Estadístico de Hopkins 
+bondad_ac$hopkins_stat
+
+# Gráfico 
+bondad_ac$plot + 
+        scale_fill_gradient(low = "steelblue", high = "white")
+
+## Fase 4. Determinación del número "óptimo" de clusters
+
+# Con factoextra:
+fviz_nbclust(TT_tip, kmeans, method = "wss") +
+        geom_vline(xintercept = 3, linetype = 2) +
+        geom_vline(xintercept = 4, linetype = 3) +
+        ggtitle("Número óptimo de clusters - k medias") +
+        labs(x="Número k de clusters",y="Suma total de cuadrados intra grupos")
+
+#para jerárquico  --  sugiere 3 grupos
+fviz_nbclust(TT_tip,  hcut, method = "wss") +
+        geom_vline(xintercept = 3, linetype = 2) +
+        ggtitle("Número óptimo de clusters - jerárquico") +
+        labs(x="Número k de clusters",y="Suma total de cuadrados intra grupos")
+
+
+## Determinación del número de clusters con NBClust
+
+library("NbClust")
+
+set.seed(123)
+clus.nb = NbClust(TT_tip, distance = "euclidean",
+                  min.nc = 2, max.nc = 10, 
+                  method = "complete", index ="gap") 
+clus.nb # resultados
+
+# Todos los valores del estadístico de corte
+clus.nb$All.index
+# Número óptimo de clusters
+clus.nb$Best.nc
+# Mejor partición
+clus.nb$Best.partition
+
+# Cálculo de todos los índices, menos los 4 que son muy exigentes operacionalmente (si los quisiéramos, alllong en vez de all)
+nb.todos = NbClust(TT_tip, distance = "euclidean", min.nc = 2,
+                   max.nc = 10, method = "complete", index ="all")
+nb.todos
+
+#podemos visualizar un resumen
+fviz_nbclust(nb.todos) + theme_minimal() +
+        labs(x="Número k de clusters", y="Frecuencia")
+
+

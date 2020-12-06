@@ -1,0 +1,418 @@
+---
+title: "Coches del Jefe - Parte 3"
+author: "Hugo César Octavio del Sueldo"
+date: "12/5/2020"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F, warning=F, fig.align = "center", out.width='50%', out.height='50%')
+```
+
+## Problema a solucionar
+
+Finalmente, después de haber solucionado los problemas de selección de variables y tratamiento de valores perdidos, debe proceder a asignar los coches a las viviendas de su jefe. En un máximo de cuatro páginas, indique de qué forma va a proceder y cuáles son las características tanto de los grupos que ha creado como de los vehículos que asigna a cada vivenda.
+
+## Introducción
+
+Esta es la tercera parte de la practica relacionada a los coches del jefe. En la primera parte de esta serie de entregas realizamos un analisis explotario de los datos con los que contabamos, analizando aquellas variables que nos resultaban interesantes para la agrupacion y posterior reparto de los coches del jefe en las localidades o residencias con las que el contaba. En la segunda parte, realizamos una propuesta de reparto de la coleccion de autos al jefe. Para esto, estudiamos el número adecuado de grupos en los que dividir la coleccion. Teniendo en cuenta de que el maximo numero de coches por residencia es de 15 y sabiendo de que en el caso de que hayamos propuesto grupos con mas coches, teníamos que escoger las residencias en las que guardarlos, atendiendo al criterio de distancia. En el siguiente **[enlace](https://www.google.com/maps/d/viewer?mid=16dTDuU6f4K3HI3C7vQtxBUPB_xcGkrhW&ll=45.84097027564829%2C3.994010199999991&z=6)** tiene un mapa de las residencias actuales. Ahora, como habrán observado arriba, debemos proceder a la asignación de los coches a la viviendas del jefe indicando de que forma procedemos finalmente y cuáles son las caracteristicas tanto de los grupos que hemos creado como de los vehiculos que asignaremos a cada vivienda.
+
+```{r librerias_fichero, include=FALSE}
+library(tidyverse)
+# Cargamos los datos con foreign
+library(foreign)
+TTerreno = as.data.frame(read.spss("tterreno.sav"))
+library(factoextra)
+library(cluster)
+library(varhandle)
+library(corrplot)
+require(clustertend)
+```
+
+***
+### Fase 1
+
+Una vez explicado el objetivo del trabajo, vamos a explicar cómo fue el tratamiento de los valores faltantes dentro del fichero utilizado. Aqui se utilizaron distintas tecnicas como reemplazar los pesos por pesos de coches equivalentes y para algunas marcas, como pueden ser Nissan y Ssanyong, se sustituyeron los consumos por los consumos medios de las marcas. 
+
+```{r tratamiento_na, include=FALSE}
+#Identificación de los NAs por columnas
+apply(TTerreno, 2, function(x) {sum(is.na(x))})
+
+#Vemos cuáles son
+subset(TTerreno, is.na(peso)) 
+
+# De esta forma, podemos decidir cómo sustituir; en este caso, por el peso de los otros dos coches equivalentes.
+#library(tidyverse)
+
+TTerreno$peso=replace_na(TTerreno$peso, 1850) 
+
+# con el resto
+subset(TTerreno, is.na(cons90)) 
+
+# En el caso de los Nissan y Ssanyong sustituiremos con los consumos medios de la marca, 
+
+TTerreno %>%
+        group_by(marca) %>%
+        dplyr::summarize(Mean90 = mean(cons90, na.rm=TRUE),
+                         Mean120 = mean(cons120, na.rm=TRUE),
+                         MeanUrb = mean(consurb, na.rm=TRUE)) 
+
+TTerreno$cons90.2 <- ifelse(TTerreno$marca %in% c("NISSAN") & is.na(TTerreno$cons90), 8.4, TTerreno$cons90)
+TTerreno$cons90.3 <- ifelse(TTerreno$marca %in% c("SSANGYONG") & is.na(TTerreno$cons90), 8.17, TTerreno$cons90.2)
+
+# Para los UAZ, por el consumo medio de los TT de 7 plazas
+TTerreno %>%
+        group_by(plazas) %>%
+        dplyr::summarize(Mean90 = mean(cons90, na.rm=TRUE),
+                         Mean120 = mean(cons120, na.rm=TRUE),
+                         MeanUrb = mean(consurb, na.rm=TRUE)) 
+
+TTerreno$cons90.4 <- ifelse(TTerreno$marca %in% c("UAZ") & is.na(TTerreno$cons90), 9.29, TTerreno$cons90.3)
+
+#♥ Finalmente, tenemos cons90.4 con todos los consumos y "pisamos" cons90
+TTerreno$cons90=TTerreno$cons90.4
+
+
+# Procedemos igual con los cons120 y consurb:
+# ASIA: cons120 de los de 4 plazas
+TTerreno$cons120.2 <- ifelse(TTerreno$marca %in% c("ASIA MOTORS") & is.na(TTerreno$cons120), 11, TTerreno$cons120)
+
+# Jeep  Grand Cherokee Jamb por el 2.5TD 3 ptas (justo encima)
+TTerreno$cons120.3 <- ifelse(TTerreno$marca %in% c("JEEP") & is.na(TTerreno$cons120), 10.5, TTerreno$cons120.2)
+
+# LADA  por el de los 5 plazas
+TTerreno$cons120.4 <- ifelse(TTerreno$marca %in% c("LADA") & is.na(TTerreno$cons120), 12.8, TTerreno$cons120.3)
+
+# NISSAN y SSanyong por los consumos medios  de la marca a 120
+
+TTerreno$cons120.5 <- ifelse(TTerreno$marca %in% c("NISSAN") & is.na(TTerreno$cons120), 12.5, TTerreno$cons120.4)
+TTerreno$cons120.6 <- ifelse(TTerreno$marca %in% c("SSANGYONG") & is.na(TTerreno$cons120), 12.6, TTerreno$cons120.5)
+
+#  Por último, los UAZ por el consumo medio de los TT de 7 plazas
+TTerreno$cons120.7 <- ifelse(TTerreno$marca %in% c("UAZ") & is.na(TTerreno$cons120), 13.5, TTerreno$cons120.6)
+
+##♠ Pisamos cons120 con cons120.7
+
+TTerreno$cons120=TTerreno$cons120.7
+
+# Eliminamos las sobrantes
+TTerreno[,c(16:21)]=NULL
+
+# Actuamos del mismo modo para consurb y velocida
+TTerreno$consurb.1 <- ifelse(TTerreno$marca %in% c("JEEP") & is.na(TTerreno$consurb), 9.8, TTerreno$consurb)
+TTerreno$consurb.2 <- ifelse(TTerreno$marca %in% c("NISSAN") & is.na(TTerreno$consurb), 12.2, TTerreno$consurb.1)
+TTerreno$consurb.3 <- ifelse(TTerreno$marca %in% c("TOYOTA") & is.na(TTerreno$consurb), 10.4, TTerreno$consurb.2) # cambiamos por el análogo - justo encima
+
+TTerreno$consurb=TTerreno$consurb.3
+
+# Eliminamos las sobrantes
+TTerreno[,c(16:18)]=NULL
+
+TTerreno$velocida.1 <- ifelse(TTerreno$marca %in% c("SUZUKI") & is.na(TTerreno$velocida), 147, TTerreno$velocida)
+TTerreno$velocida.2 <- ifelse(TTerreno$marca %in% c("TATA") & is.na(TTerreno$velocida), 135, TTerreno$velocida.1)
+
+TTerreno$velocida=TTerreno$velocida.2
+
+# Comprobamos los NA
+apply(TTerreno, 2, function(x) {sum(is.na(x))})
+```
+
+Respecto de las variables a utilizar para hacer la agrupación y reparto de los vehiculos del jefe, se descartaron las variables revoluciones por minuto, acelerac y acel2 ya que son precindibles y no perderemos informacion a la hora de explicar los grupos si no estan estas variables.
+
+
+```{r, include=FALSE}
+## Definimos el DF con las variables que queremos, todas menos rpm, acelerac, acel2
+
+TT=TTerreno[, c(1:13)]
+TT$rpm=NULL
+
+# Comprobamos los NA
+apply(TT, 2, function(x) {sum(is.na(x))})
+
+# Uno las dos 1as columnas, y las elimino
+TT$TT <- paste(TT$marca,"-",TT$modelo)
+TT[,c(1,2)]=NULL
+
+
+# Como hay duplicados (debido a versiones distintas no recogidas en el nombre del modelo), y eso nos impide renombrar las filas, los re-codificamos 
+TT$TT <- with(TT, make.unique(as.character(TT)))
+
+
+# Y pongo por nombre de fila el valor de la columna TT
+
+TT = data.frame(TT[,-11], row.names=TT[,11])
+```
+
+
+```{r, include=FALSE}
+# Redefinimos las variables cilindros y plazas como numéricas con unfactor de varhandle
+#library(varhandle)
+
+TT$cilindro=unfactor(TT$cilindro)
+TT$plazas=unfactor(TT$plazas)
+
+## Fase 1. caracterizamos los vehículos
+
+TT_stats = data.frame(
+        Min = apply(TT, 2, min), # mín
+        P25 = apply(TT, 2, quantile, probs=c(0.25), na.rm=TRUE),
+        Med = apply(TT, 2, median), # mediana
+        P75 = apply(TT, 2, quantile, probs=c(0.75), na.rm=TRUE),
+        Max = apply(TT, 2, max), # máx
+        Mean = apply(TT, 2, mean), # media
+        SD = apply(TT, 2, sd) # desv est
+        )
+TT_stats = round(TT_stats, 1)
+TT_stats
+```
+
+Una vez seleccionadas las variables a utilizar procederemos a tipificar las variables como paso previo necesario debido a que las variables que explican a los coches estan en distintas escalas metricas, entonces, para poder comparar unas con otras a traves de la tecnicas del analisis cluster debemos tipificarlas o escalarlas. 
+***
+
+### Fase 2
+
+En la Fase 2 del analisis, realizamos algunas tecnicas para empezar a visualizar grupos de observaciones similares. Comenzamos con un grafico con las distancias de pearson que nos permite identificar que hay grupos de observaciones bien identificadas en base al tamaño de los cuadrados y de sus colores. Mientras mas azul, podemos observar que los coches son mas homogeneos y los rojos significa que son mas heterogeneos. Aqui para saber lo similares que son los vehiculos, lo analizamos en base a la posicion que tienen los coches en virtud de sus caracteristicas.
+
+```{r, echo=FALSE,  fig.keep='first', results='hide'}
+## Fase 2. Comprobamos distancias sobre variables tipificadas
+
+# Tipificamos las variables
+TT_tip=scale(TT)
+
+#library(factoextra)
+#library(cluster)
+
+
+TT.dist = get_dist(TT, stand = TRUE, method = "pearson") 
+
+fviz_dist(TT.dist, gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07"), lab_size = 5)
+
+
+dist.eucl = dist(TT_tip, method = "euclidean", upper=F)
+dist.eucl
+
+```
+
+Luego, utilizando la tecnicas de la distancia euclidea, visualizamos una matriz de correlaciones y un dendograma que nos permiten confirmar e interpretar mejor esas relaciones. Aqui, ya empezamos a observar que hay tres grupos de vehículos similares en base a su distancia euclidea.
+
+
+```{r, echo=FALSE, fig.keep='last'}
+### Visualización de las matrices de distancia mediante corrplot() del package corrplot, que cargamos
+
+# Distancia euclídea
+#library(corrplot)
+
+corrplot(as.matrix(dist.eucl), is.corr = FALSE, method = "color", type="lower", diag=F, order="hclust", tl.cex=0.5, tl.col="dodgerblue4")
+
+#Podemos emplear el dendrograma para visualizar grupos de observaciones similares
+plot(hclust(dist.eucl, method = "ward.D2"), cex=0.7, main="Dendrograma", ylab="Anchura", 
+     xlab="Análisis cluster aplicando Ward sobre matriz de distancias euclídeas", cex=0.5)
+
+# De esta forma, ya empezamos a observar grupos de vehículos similares basados en la distancia euclídea
+```
+
+
+***
+### Fase 3
+
+En la Fase 3 comenzamos el analisis cluster per se. Aqui comenzamos con distintas pruebas para encontrar el numero de clusters optimos para separar las observaciones. Inicializando con un analisis no jerarquizado *kmeans*, utilizando la distancia euclidea sobre los datos estandarizados, observamos que nos lanzaba solo un cluster como optimo. Entonces, probamos los valores de la silueta para un analisis jerarquico *hclust* con 4 clusters, opcion que terminamos descartando por considerarlas forzadas. Luego, realizamos distintas pruebas con datos aleatorios comparandolos con los datos sin aleatoriedad.
+
+```{r, include=FALSE}
+## Fase 3. Clusters iniciales. Pruebas.
+
+TT.eclust = eclust(TT, FUNcluster = "kmeans", stand=TRUE, hc_metric="euclidean", nstart=25) # sobre TT, estandarizado con stand=TRUE
+
+# Miramos el número "óptimo" de clusters
+
+TT.eclust$nbclust
+# ...  lo que nos lleva a despreciar esta opción, al no detectarse diferencias entre los vehículos, y pasamos a un jerárquico
+
+## Y pasamos a un jerárquico
+TT.eclust.j = eclust(TT, "hclust", k=4) # forzamos a 4 grupos
+fviz_dend(TT.eclust.j, rect = TRUE, cex=0.6) # dendrograma con 4 grupos
+fviz_silhouette(TT.eclust.j) # silueta
+
+fviz_cluster(TT.eclust.j, pointsize = 2, labelsize = 8, repel=TRUE) # scatter plot
+
+
+## Estas opciones resultan forzadas, tenemos que pasar a otra solución.
+
+# Conjunto de datos aleatorios
+set.seed(123)
+n = nrow(TT)
+random_df <- data.frame(
+        x1 = runif(nrow(TT), min(TT$pvp), max(TT$pvp)),
+        x2 = runif(nrow(TT), min(TT$cilindro), max(TT$cilindro)),
+        x3 = runif(nrow(TT), min(TT$cc), max(TT$cc)),
+        x4 = runif(nrow(TT), min(TT$potencia), max(TT$potencia)),
+        x5 = runif(nrow(TT), min(TT$peso), max(TT$peso)),
+        x6 = runif(nrow(TT), min(TT$plazas), max(TT$plazas)),
+        x7 = runif(nrow(TT), min(TT$cons90), max(TT$cons90)),
+        x8 = runif(nrow(TT), min(TT$cons120), max(TT$cons120)),
+        x9 = runif(nrow(TT), min(TT$consurb), max(TT$consurb)),
+        x10 = runif(nrow(TT), min(TT$velocida), max(TT$velocida)))
+
+
+# Fijamos un par de clusters y los comparamos con la solución aleatoria.
+
+set.seed(123)
+
+prueba1 = kmeans(TT, 2)
+fviz_cluster(list(data = TT, cluster = prueba1$cluster),
+             ellipse.type = "norm", geom = "point", stand = TRUE)
+
+prueba2 = kmeans(random_df, 2)
+fviz_cluster(list(data = random_df, cluster = prueba2$cluster),
+             ellipse.type = "norm", geom = "point", stand = TRUE)
+
+# Fijamos ahora 3 clusters.
+
+set.seed(123)
+
+prueba11 = kmeans(TT, 3)
+fviz_cluster(list(data = TT, cluster = prueba11$cluster),
+             ellipse.type = "convex", geom = "point", stand = TRUE)
+
+prueba22 = kmeans(random_df, 3)
+fviz_cluster(list(data = random_df, cluster = prueba22$cluster),
+             ellipse.type = "convex", geom = "point", stand = TRUE)
+
+# Cluster jerárquico sobre el conjunto de datos aleatorios, con k=4
+fviz_dend(hclust(dist(random_df)), k = 4,  cex = 0.5)
+fviz_dend(hclust(dist(TT)), k = 4,  cex = 0.5)
+```
+
+Continuando, analizamos la bondad del analisis cluster con el metodo Hopkins. Se trata de un contraste frente a la estructura aleatoria a través de una distribución uniforme del espaciode datos; la idea es contrastar una hipótesis de distribución uniforme / aleatoria de los datos frente a su alternativa (que no lo sea); de aceptarse la hipótesis nula, no existirían grupos de observaciones interesantes en el conjunto analizado. En nuestro caso, al conseguir un resultado de 0.145 nos permite rechazar la hipótesisde aleatoriedad y entonces avalamos la presencia de dos o más clusters en el conjunto de observaciones.
+
+Ademas, utilizamos el método VAT (Virtual Assessment of cluster Tendency) que permite inspeccionar visualmente la posibilidad de agrupamiento de los datos analizados. La intensidad del azul es proporcional a la disimilaridad entre las observaciones; cuanto más oscuro, menor la distancia entre las observaciones (dist(xi,xj)→0, con azul indicando dist(xi,xj) = 0) mientras que cuanto más claro, mayor la distancia entre ellas (dist(xi,xj)→1, con blanco indicando dist(xi,xj) = 1). Las observaciones de un mismo cluster se presentan de forma correlativa.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.keep='last', results='hide'}
+##Evaluamos la bondad del AC con el método de Hopkins: cuanto más cercano a cero, mejor capacidad de segmentación.
+#require(clustertend)
+# Aplicamos el estadístico sobre los datos reales
+set.seed(123)
+hopkins(TT_tip, n = nrow(TT)-1)
+
+# y ahora sobre los datos aleatorios
+set.seed(123)
+hopkins(random_df, n = nrow(random_df)-1)
+
+# La diferencia es significativa.
+
+# Bondad, sobre datos tipificados:
+bondad_ac = get_clust_tendency(TT_tip, 100)
+# Estadístico de Hopkins 
+bondad_ac$hopkins_stat
+
+# Gráfico 
+bondad_ac$plot + 
+        scale_fill_gradient(low = "steelblue", high = "white")
+```
+
+
+***
+
+
+```{r, include=FALSE}
+## Fase 4. Determinación del número "óptimo" de clusters
+
+# Con factoextra:
+fviz_nbclust(TT_tip, kmeans, method = "wss") +
+        geom_vline(xintercept = 3, linetype = 2) +
+        geom_vline(xintercept = 4, linetype = 3) +
+        ggtitle("Número óptimo de clusters - k medias") +
+        labs(x="Número k de clusters",y="Suma total de cuadrados intra grupos")
+
+#para jerárquico  --  sugiere 3 grupos
+fviz_nbclust(TT_tip,  hcut, method = "wss") +
+        geom_vline(xintercept = 3, linetype = 2) +
+        ggtitle("Número óptimo de clusters - jerárquico") +
+        labs(x="Número k de clusters",y="Suma total de cuadrados intra grupos")
+
+
+## Determinación del número de clusters con NBClust
+
+library("NbClust")
+
+set.seed(123)
+clus.nb = NbClust(TT_tip, distance = "euclidean",
+                  min.nc = 2, max.nc = 10, 
+                  method = "complete", index ="gap") 
+clus.nb # resultados
+
+# Todos los valores del estadístico de corte
+clus.nb$All.index
+# Número óptimo de clusters
+clus.nb$Best.nc
+# Mejor partición
+clus.nb$Best.partition
+
+# Cálculo de todos los índices, menos los 4 que son muy exigentes operacionalmente (si los quisiéramos, alllong en vez de all)
+nb.todos = NbClust(TT_tip, distance = "euclidean", min.nc = 2,
+                   max.nc = 10, method = "complete", index ="all")
+nb.todos
+
+#podemos visualizar un resumen
+fviz_nbclust(nb.todos) + theme_minimal() +
+        labs(x="Número k de clusters", y="Frecuencia")
+```
+
+### Fase 4
+
+En la Fase 4, buscamos determinar el numero optimo de clusters. Observando distintos metodos como el metodo del hombro y haciendo uso de la libreria NBClust, se aprecia que el numero optimo de clusters que se deben utilizar para la agrupacion de los coches esta entre dos y tres. Nosotros tomaremos la decision de trabajar con tres clusters ya que nos facilita el trabajo de la reparticion de los coches, algo que seria muy complicado de realizar solo con dos clusters. 
+
+
+```{r, echo=FALSE}
+fviz_nbclust(TT_tip,  hcut, method = "wss") +
+  geom_vline(xintercept = 3, linetype = 2) +
+  ggtitle("Número óptimo de clusters - jerárquico") +
+  labs(x="Número k de clusters",y="Suma total de cuadrados intra grupos")
+```
+
+Una vez elegido el numero de grupos que vamos a utilizar procedemos al estudio de dichos grupos analizando sus caracteristicas principales y diferenciales respecto del resto de los grupos. 
+
+#### Dendograma de los tres clusters
+
+```{r dendrograma, results='hide'}
+cluster.complete <- hclust(dist(TT_tip), method = "complete")
+
+fviz_dend(cluster.complete, k = 3,  cex = 0.5)
+cutree(cluster.complete, 3)
+```
+
+
+```{r, include=FALSE}
+grupo <- cutree(cluster.complete, 3)
+resultado_tipificados <- data.frame(TT_tip, grupo)
+
+resultado_sintipificar <- data.frame(TT, grupo)
+```
+
+- Grupo 1: Este grupo esta compuesto por 73 coches, pintados de azul en la grafica, son modelos de 4 cilindros en su mayoria, mas baratos en media respecto del resto de los grupos. Al mismo tiempo, tienen menor potencia, cc y peso respecto del grupo 2 y 3. Ademas, su consumo es considerablemente inferior a los del grupo 2 y similares a los del grupo 3.
+
+- Grupo 2: Este grupo esta compuesto por 21 coches, pintados de rojo en el dendrograma, son modelos de alta gama como los Mercedez Benz que se caracterizan por tener potencia, velocidad, consumo y numero de cilindros por encima de la media del resto de los grupos. 
+
+- Grupo 3: Este grupo esta compuesto por 31 coches, pintados de verde en la grafica, son modelos caracterizados por tener valores intermedios entre los del grupo 1 y los del grupo 2. Asi, logran superar en potencia, peso y velocidad a los coches del grupo 1 pero sin alcanzar los valores que caracterizan a los coches del grupo 2.
+
+
+```{r grupos, include=FALSE}
+cluster_1 <- sum(resultado_tipificados$grupo == 1)
+cluster_2 <- sum(resultado_tipificados$grupo == 2)
+cluster_3 <- sum(resultado_tipificados$grupo == 3)
+
+grupo_1 <- resultado_sintipificar[resultado_sintipificar$grupo == 1,]
+grupo_2 <- resultado_sintipificar[resultado_sintipificar$grupo == 2,]
+grupo_3 <- resultado_sintipificar[resultado_sintipificar$grupo == 3,]
+
+summary(grupo_1)
+
+summary(grupo_2)
+
+summary(grupo_3)
+```
+
+Ahora pasaremos al reparto de los grupos en las distintas casas del jefe. El grupo 1 formado por los 73 coches de gama baja, deberian ser asignados en 5 garages por tener la limitacion de 15 coches por garage como maximo, entonces procederemos a enviarlos a Monaco, Andorra y a Corse (en barco) por la poca distancia entre estas localidades, a su vez, creo que seria conveniente dejar estos coches de gama baja para estas localidades que, atendiendo a los gustos del jefe, le resultara una buena eleccion porque le gusta utilizar los coches de gama alta en otras localidades como Paris o en Suiza. 
+
+Siguiendo con el reparto y atendiendo a los criterios e interes del jefe, enviaremos los 21 coches de alta gama del grupo dos a las localidades de Suiza repartiendo 10 y 11 coches en cada una de estas localidades. Finalmente, repartiremos los coches del grupo 3, que tenian caracteristicas intermedias entre el grupo 1 y 2, en las localidades de Paris donde repartiremos los coches mas caros de este grupo y luego los 5 modelos mas baratos como los SSANGYONG - Musso 602 STD o el FORD - Maverick 2.7 TD GL 3 los enviaremos a La Rochelle.
